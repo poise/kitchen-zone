@@ -15,10 +15,10 @@
 
 require "shellwords"
 
+require "kitchen/driver/base"
 require "thor/util"
 
-require "kitchen/driver/base"
-require "kitchen/transport"
+require "airlift"
 
 
 module Kitchen
@@ -55,12 +55,6 @@ module Kitchen
           end
           Airlift.connect(**transport_config)
         end
-      end
-
-      def gateway_execute(*cmd)
-        cmd = cmd.first if cmd.length == 1
-        cmd = Shellwords.join(cmd) if cmd.is_a?(Array)
-        gateway_transport.connection({}).execute(cmd)
       end
 
     end
