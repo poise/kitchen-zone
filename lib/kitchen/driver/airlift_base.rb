@@ -48,12 +48,12 @@ module Kitchen
           transport_config = config[:transport].dup
           # Pull out the plugin name, if a hostname is set default to
           # the same as the instance transport otherwise default to local.
-          transport_config[:name] = transport_config[:name] || if transport_config[:hostname]
+          plugin_name = transport_config[:name] || if transport_config[:hostname]
             Thor::Util.snake_case(instance.transport.class.name.split(/::/).last)
           else
             'local'
           end
-          Airlift.connect(**transport_config)
+          Airlift.connect(name: plugin_name, logger: logger, **transport_config)
         end
       end
 
