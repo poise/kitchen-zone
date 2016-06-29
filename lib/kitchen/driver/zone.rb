@@ -163,7 +163,7 @@ EOH
 
         # Create a temp dir to hold some config files.
         # TODO implement the #tempfile method in Airlfit and convert this.
-        tempdir = airlift.execute!('/bin/mktemp -d').stdout.strip
+        tempdir = airlift.execute!('mktemp -d').stdout.strip
 
         begin
           # Create the zone config.
@@ -179,7 +179,7 @@ EOH
           airlift.execute!("/usr/sbin/zoneadm -z #{zone_name} boot")
         ensure
           # Clean up the config.
-          airlift.execute!("/bin/rm -rf #{tempdir}") unless config[:keep_config]
+          airlift.execute!("rm -rf #{tempdir}") unless config[:keep_config]
         end
 
         # Wait for networking.
