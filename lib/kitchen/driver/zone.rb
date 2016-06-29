@@ -19,14 +19,14 @@ require 'openssl'
 require 'securerandom'
 require 'shellwords'
 
-require 'kitchen/driver/train_base'
+require 'kitchen/driver/airlift_base' # THIS IS PART OF THIS PLUGIN FOR NOW
 require 'net/ssh'
 
 
 module Kitchen
   module Driver
     # Driver plugin for Test-Kitchen to use Solaris Zones.
-    class Zone < Kitchen::Driver::TrainBase
+    class Zone < Kitchen::Driver::AirliftBase
       # Mutex for generating SSH keys, important for concurrent kitchen-ing.
       SSH_KEY_MUTEX = Mutex.new
 
@@ -48,6 +48,7 @@ module Kitchen
 
       # NAT port to forward for SSH.
       default_config :zone_port do |driver|
+        # TODO this needs to check for collisions.
         rand(65535 - 1025) + 1025
       end
 
@@ -161,31 +162,32 @@ EOH
         public_key = "ssh-rsa #{blobbed_key} kitchen_zone"
 
         # Create a temp dir to hold some config files.
-        tempdir = train_command!('mktemp -d').stdout.strip
+        # TODO implement the #tempfile method in Airlfit and convert this.
+        tempdir = airlift.execute!('mktemp -d').stdout.strip
 
         begin
           # Create the zone config.
           comment = "Created by #{Etc.getlogin || 'unknown'} on #{Socket.gethostname} at #{Time.now}"
-          train_command!('sh', '-c', "echo #{Shellwords.escape(PROFILE % {name: zone_name, comment: comment})} > #{tempdir}/profile.cfg")
-          train_command!('sh', '-c', "echo #{Shellwords.escape(CONFIG % {name: zone_name, public_key: public_key})} > #{tempdir}/profile.xml")
+          airlift.file("#{tempdir}/profile.cfg").content = PROFILE % {name: zone_name, comment: comment}
+          airlift.file("#{tempdir}/profile.xml").content = CONFIG % {name: zone_name, public_key: public_key}
 
           # Clone the template zone.
-          train_command!("/usr/sbin/zonecfg -z #{zone_name} -f #{tempdir}/profile.cfg")
-          train_command!("/usr/sbin/zoneadm -z #{zone_name} clone -c #{tempdir}/profile.xml template")
+          airlift.execute!("/usr/sbin/zonecfg -z #{zone_name} -f #{tempdir}/profile.cfg")
+          airlift.execute!("/usr/sbin/zoneadm -z #{zone_name} clone -c #{tempdir}/profile.xml template")
 
           # Boot the zone.
-          train_command!("/usr/sbin/zoneadm -z #{zone_name} boot")
+          airlift.execute!("/usr/sbin/zoneadm -z #{zone_name} boot")
         ensure
           # Clean up the config.
-          # train_command!("rm -rf #{tempdir}")
+          airlift.execute!("rm -rf #{tempdir}") unless config[:keep_config]
         end
 
         # Wait for networking.
         info "Waiting for zone #{zone_name} to start"
         while true # TODO this should have a timeout
           sleep(5)
-          cmd = train_command('/usr/sbin/zlogin', zone_name, 'ipadm show-addr')
-          if cmd.exit_status == 0 && cmd.stdout =~ %r{net0/v4\s+dhcp\s+ok\s+([0-9.]+)/24}
+          cmd = airlift.execute('/usr/sbin/zlogin', zone_name, 'ipadm show-addr')
+          if !cmd.error? && cmd.stdout =~ %r{net0/v4\s+dhcp\s+ok\s+([0-9.]+)/24}
             state[:zone_ip] = $1
             break
           end
@@ -193,7 +195,7 @@ EOH
 
         # Set up NAT.
         state[:zone_port] = config[:zone_port]
-        train_command!('sh', '-c', "echo \"rdr net0 0.0.0.0/0 port #{state[:zone_port]} -> #{state[:zone_ip]} port 22\" | /usr/sbin/ipnat -f -")
+        airlift.execute!('sh', '-c', "echo \"rdr net0 0.0.0.0/0 port #{state[:zone_port]} -> #{state[:zone_ip]} port 22\" | /usr/sbin/ipnat -f -")
 
         # Populate the state for the transport.
         state[:hostname] = config[:transport][:host]
@@ -203,14 +205,18 @@ EOH
 
       def destroy(state)
         if state[:zone_port] && state[:zone_ip]
-          train_command!('sh', '-c', "echo \"rdr net0 0.0.0.0/0 port #{state[:zone_port]} -> #{state[:zone_ip]} port 22\" | /usr/sbin/ipnat -r -f -")
+          airlift.execute('sh', '-c', "echo \"rdr net0 0.0.0.0/0 port #{state[:zone_port]} -> #{state[:zone_ip]} port 22\" | /usr/sbin/ipnat -r -f -")
           state.delete(:zone_port)
           state.delete(:zone_ip)
         end
         if state[:zone_name]
-          train_command("/usr/sbin/zoneadm -z #{state[:zone_name]} halt")
-          train_command("/usr/sbin/zoneadm -z #{state[:zone_name]} uninstall -F")
-          train_command("/usr/sbin/zonecfg -z #{state[:zone_name]} delete -F")
+          [
+            "/usr/sbin/zoneadm -z #{state[:zone_name]} halt",
+            "/usr/sbin/zoneadm -z #{state[:zone_name]} uninstall -F",
+            "/usr/sbin/zonecfg -z #{state[:zone_name]} delete -F",
+          ].each do |cmd|
+            airlift.execute(cmd)
+          end
           state.delete(:zone_name)
         end
       end

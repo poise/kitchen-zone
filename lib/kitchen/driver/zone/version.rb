@@ -17,8 +17,6 @@
 
 module Kitchen
   module Driver
-    class Zone
-      VERSION = '1.0.0.pre'
-    end
+    ZONE_VERSION = '1.0.0.pre'
   end
 end

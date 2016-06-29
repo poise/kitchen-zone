@@ -18,4 +18,5 @@ source 'https://rubygems.org/'
 
 gemspec
 
-gem 'test-kitchen', path: '../test-kitchen'
+# gem 'test-kitchen', path: '../test-kitchen'
+gem 'airlift', github: 'poise/airlift'
